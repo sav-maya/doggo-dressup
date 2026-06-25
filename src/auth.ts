@@ -5,7 +5,7 @@ import { createRemoteJWKSet, jwtVerify } from 'jose';
 const NEON_AUTH_URL =
   process.env.NEON_AUTH_BASE_URL ??
   process.env.NEON_AUTH_URL ??
-  'https://ep-restless-surf-aj2m390k.neonauth.c-3.us-east-2.aws.neon.tech/neondb/auth';
+  'https://ep-red-rice-ajweugmd.neonauth.c-3.us-east-2.aws.neon.tech/neondb/auth';
 
 // Issuer in the JWT is just the origin of the auth URL (no /neondb/auth path),
 // per the Neon Auth JWT docs.

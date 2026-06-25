@@ -1,67 +1,69 @@
-export type Theme = {
+// Example prompts shown as one-click starters in the UI. Free-form prompts
+// are encouraged — these are just inspiration. The literal "{pet}" token is
+// replaced client-side with the user's selected pet's @-mention.
+
+export type Example = {
   id: string;
-  label: string;
   emoji: string;
-  prompt: string;
+  label: string;
+  template: string;
 };
 
-export const THEMES: Record<string, Theme> = {
-  knight: {
+export const EXAMPLES: Example[] = [
+  {
     id: 'knight',
-    label: 'Medieval Knight',
     emoji: '⚔️',
-    prompt:
-      'a heroic medieval knight in shining silver armor with a flowing red cape, holding a tiny sword in their paws, standing in a stone castle courtyard. Oil painting style, dramatic lighting.',
+    label: 'Knight',
+    template:
+      '{pet} as a heroic medieval knight in shining silver armor with a red cape, in a stone castle courtyard. Oil painting style.',
   },
-  astronaut: {
+  {
     id: 'astronaut',
-    label: 'Astronaut',
     emoji: '🚀',
-    prompt:
-      'a brave astronaut in a NASA-style space suit with a helmet (face still visible through the visor), floating in zero gravity inside the International Space Station with the Earth visible through a porthole. Photorealistic, cinematic.',
+    label: 'Astronaut',
+    template:
+      '{pet} as a NASA astronaut floating in zero gravity inside the ISS, with Earth visible through a porthole. Photorealistic.',
   },
-  wizard: {
+  {
     id: 'wizard',
-    label: 'Wizard',
     emoji: '🧙',
-    prompt:
-      'a wise wizard wearing a starry deep-blue robe and a tall pointed hat, holding a glowing wand, in a magical library full of floating spell books and candles. Fantasy art style, warm magical glow.',
+    label: 'Wizard',
+    template:
+      '{pet} as a wise wizard wearing a starry blue robe and a tall pointed hat, in a magical library full of floating books. Fantasy art style.',
   },
-  chef: {
+  {
     id: 'chef',
-    label: 'Chef',
     emoji: '👨‍🍳',
-    prompt:
-      'a professional chef wearing a tall white toque and a clean white chef coat, in a bustling restaurant kitchen with steam, copper pots and a flaming pan. Cinematic photo, warm lighting.',
+    label: 'Chef',
+    template:
+      '{pet} as a professional chef in a tall white toque, in a busy restaurant kitchen with copper pots and a flaming pan. Cinematic photo.',
   },
-  pirate: {
+  {
     id: 'pirate',
-    label: 'Pirate Captain',
     emoji: '🏴‍☠️',
-    prompt:
-      "a swashbuckling pirate captain with a tricorne hat, an eye patch, a gold earring and a red coat, on the wooden deck of a tall ship at sunset with the ocean behind. Adventurous illustrated style.",
+    label: 'Pirate',
+    template:
+      '{pet} as a swashbuckling pirate captain in a tricorne hat and red coat, on the deck of a tall ship at sunset.',
   },
-  cowboy: {
+  {
     id: 'cowboy',
-    label: 'Cowboy',
     emoji: '🤠',
-    prompt:
-      'a cowboy with a wide-brimmed brown hat, leather vest, and red bandana, standing in front of an Arizona desert sunset with saguaro cacti. Vintage western film photo style, golden hour.',
+    label: 'Cowboy',
+    template:
+      '{pet} as a cowboy in a wide-brimmed hat and red bandana, in front of an Arizona desert sunset. Vintage western photo.',
   },
-  disco: {
+  {
     id: 'disco',
-    label: 'Disco Star',
     emoji: '🪩',
-    prompt:
-      'a 1970s disco dancer in a white sequined jumpsuit and a gold chain, paws raised under a giant spinning disco ball with rainbow lights. Energetic 1970s nightclub photo.',
+    label: 'Disco',
+    template:
+      '{pet} as a 1970s disco dancer in a sequined jumpsuit, under a giant spinning disco ball with rainbow lights.',
   },
-  sushi: {
+  {
     id: 'sushi',
-    label: 'Sushi Chef',
     emoji: '🍣',
-    prompt:
-      'a serious sushi chef wearing a white hachimaki headband and a white chef jacket, behind a clean wooden counter with neatly arranged sushi and a small bonsai. Traditional Japanese photo style.',
+    label: 'Sushi Chef',
+    template:
+      '{pet} as a serious sushi chef behind a clean wooden counter with neatly arranged sushi. Traditional Japanese photo style.',
   },
-};
-
-export const THEME_LIST = Object.values(THEMES);
+];

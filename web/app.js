@@ -1,21 +1,19 @@
-// Doggo Dress-Up frontend.
+// Doggo Dress-Up frontend (Vibecastly-style).
+// 1. Add pets (the "cast")
+// 2. Write a prompt and @-mention them
+// 3. Generate
+//
 // Two services: the Neon Function (API) and Neon Auth (sign-in / token issuance).
 
-// API base: hardcoded production deploy. Override by setting `?api=...` in the URL
-// or by setting `window.DOGGO_API_BASE` before this script runs.
 const API_BASE =
   new URL(location.href).searchParams.get('api') ||
   window.DOGGO_API_BASE ||
-  'https://br-ancient-dream-aj6ae96i-dressup.compute.c-3.us-east-2.aws.neon.tech';
+  'https://br-rapid-forest-aj8fmj9i-dressup.compute.c-3.us-east-2.aws.neon.tech';
 
-// Neon Auth base URL — discovered at runtime from /api/auth-config so it stays
-// in sync with whatever `auth: true` resolves to on the linked branch.
 let AUTH_BASE = null;
-
-// In-memory JWT (refreshed on demand). Session cookie lives on the auth domain.
 let jwt = null;
 let jwtFetchedAt = 0;
-const JWT_TTL_MS = 14 * 60 * 1000; // gateway issues 15-minute tokens; refresh just before then
+const JWT_TTL_MS = 14 * 60 * 1000;
 
 const $ = (id) => document.getElementById(id);
 
@@ -24,7 +22,10 @@ const appPanel = $('appPanel');
 const userBox = $('userBox');
 const userEmail = $('userEmail');
 
-// ---------- auth helpers ----------
+let petsCache = [];          // [{ id, name, slug, photoUrl }]
+let examplesCache = [];      // [{ id, emoji, label, template }]
+
+// ---------- auth ----------
 
 async function bootstrapAuthBase() {
   if (AUTH_BASE) return AUTH_BASE;
@@ -37,15 +38,9 @@ async function bootstrapAuthBase() {
 async function fetchJwt() {
   await bootstrapAuthBase();
   const r = await fetch(`${AUTH_BASE}/token`, { credentials: 'include' });
-  if (!r.ok) {
-    jwt = null;
-    return null;
-  }
+  if (!r.ok) { jwt = null; return null; }
   const { token } = await r.json();
-  if (token) {
-    jwt = token;
-    jwtFetchedAt = Date.now();
-  }
+  if (token) { jwt = token; jwtFetchedAt = Date.now(); }
   return jwt;
 }
 
@@ -60,7 +55,6 @@ async function api(path, opts = {}) {
   if (t) headers.set('Authorization', `Bearer ${t}`);
   let res = await fetch(`${API_BASE}${path}`, { ...opts, headers });
   if (res.status === 401) {
-    // Token might have just expired — try one refresh.
     const refreshed = await fetchJwt();
     if (refreshed) {
       headers.set('Authorization', `Bearer ${refreshed}`);
@@ -73,16 +67,10 @@ async function api(path, opts = {}) {
 async function checkAuthState() {
   await bootstrapAuthBase();
   const t = await fetchJwt();
-  if (!t) {
-    showAuthGate();
-    return null;
-  }
+  if (!t) { showAuthGate(); return null; }
   const r = await api('/api/me');
   const data = await r.json().catch(() => ({}));
-  if (!data.user) {
-    showAuthGate();
-    return null;
-  }
+  if (!data.user) { showAuthGate(); return null; }
   showApp(data.user);
   return data.user;
 }
@@ -97,50 +85,42 @@ function showApp(user) {
   appPanel.classList.remove('hidden');
   userBox.classList.remove('hidden');
   userEmail.textContent = user.email || user.name || 'Signed in';
-  loadThemes();
+  loadExamples();
+  loadPets();
   loadGallery();
 }
 
 async function signIn(email, password) {
   await bootstrapAuthBase();
   const r = await fetch(`${AUTH_BASE}/sign-in/email`, {
-    method: 'POST',
-    credentials: 'include',
+    method: 'POST', credentials: 'include',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ email, password }),
   });
   const data = await r.json().catch(() => ({}));
-  if (!r.ok || !data.user) {
-    throw new Error(data.message || data.error?.message || 'sign-in failed');
-  }
-  jwt = null; // force a fresh /token
+  if (!r.ok || !data.user) throw new Error(data.message || data.error?.message || 'sign-in failed');
+  jwt = null;
   return data.user;
 }
 
 async function signUp(name, email, password) {
   await bootstrapAuthBase();
   const r = await fetch(`${AUTH_BASE}/sign-up/email`, {
-    method: 'POST',
-    credentials: 'include',
+    method: 'POST', credentials: 'include',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ name, email, password }),
   });
   const data = await r.json().catch(() => ({}));
-  if (!r.ok || !data.user) {
-    throw new Error(data.message || data.error?.message || 'sign-up failed');
-  }
+  if (!r.ok || !data.user) throw new Error(data.message || data.error?.message || 'sign-up failed');
   jwt = null;
   return data.user;
 }
 
 async function signOut() {
   await bootstrapAuthBase();
-  await fetch(`${AUTH_BASE}/sign-out`, {
-    method: 'POST',
-    credentials: 'include',
-  }).catch(() => {});
-  jwt = null;
-  jwtFetchedAt = 0;
+  await fetch(`${AUTH_BASE}/sign-out`, { method: 'POST', credentials: 'include' }).catch(() => {});
+  jwt = null; jwtFetchedAt = 0;
+  petsCache = [];
   showAuthGate();
 }
 
@@ -190,110 +170,247 @@ $('signupForm').addEventListener('submit', async (e) => {
 
 $('signOut').addEventListener('click', () => signOut());
 
-// ---------- dressup app ----------
+// ---------- cast (pets) ----------
 
-let selectedTheme = null;
-let selectedFile = null;
+const castEl = $('cast');
+const addPetDetails = $('addPetDetails');
+const addPetForm = $('addPetForm');
+const addPetStatus = $('addPetStatus');
 
-const fileEl = $('file');
-const uploader = $('uploader');
-const placeholder = uploader.querySelector('.placeholder');
-const swapBtn = $('swap');
-const themesEl = $('themes');
+function petInsert(slug) {
+  const ta = $('prompt');
+  const cur = ta.value;
+  const tag = `@${slug} `;
+  // Append (or insert at cursor)
+  const start = ta.selectionStart ?? cur.length;
+  const end = ta.selectionEnd ?? cur.length;
+  ta.value = cur.slice(0, start) + tag + cur.slice(end);
+  ta.focus();
+  const pos = start + tag.length;
+  ta.setSelectionRange(pos, pos);
+  updateGo();
+}
+
+function renderPets() {
+  castEl.innerHTML = '';
+  if (petsCache.length === 0) {
+    castEl.innerHTML = '<div class="empty">No pets yet. Click <strong>+ Add a pet</strong> below to get started.</div>';
+    return;
+  }
+  for (const p of petsCache) {
+    const card = document.createElement('div');
+    card.className = 'pet-card';
+    card.innerHTML = `
+      <button type="button" class="delete" title="Remove">×</button>
+      <img src="${p.photoUrl}" alt="${p.name}" />
+      <div class="name">${p.name}</div>
+      <div class="slug">@${p.slug}</div>
+      <button type="button" class="insert">Insert @${p.slug}</button>
+    `;
+    card.querySelector('.delete').addEventListener('click', async (e) => {
+      e.stopPropagation();
+      if (!confirm(`Remove ${p.name} from your cast?`)) return;
+      const r = await api(`/api/pets/${p.id}`, { method: 'DELETE' });
+      if (r.ok) loadPets();
+    });
+    card.querySelector('.insert').addEventListener('click', () => petInsert(p.slug));
+    castEl.appendChild(card);
+  }
+}
+
+async function loadPets() {
+  try {
+    const r = await api('/api/pets');
+    if (!r.ok) { petsCache = []; renderPets(); return; }
+    const { items } = await r.json();
+    petsCache = items || [];
+  } catch {
+    petsCache = [];
+  }
+  renderPets();
+}
+
+addPetForm.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  addPetStatus.classList.remove('error');
+  addPetStatus.innerHTML = '<span class="spinner"></span>Adding…';
+  const fd = new FormData(addPetForm);
+  try {
+    const r = await api('/api/pets', { method: 'POST', body: fd });
+    const data = await r.json();
+    if (!r.ok) throw new Error(data.error || 'failed');
+    addPetStatus.textContent = `Added @${data.slug}.`;
+    addPetForm.reset();
+    addPetDetails.open = false;
+    loadPets();
+  } catch (err) {
+    addPetStatus.classList.add('error');
+    addPetStatus.textContent = err.message;
+  }
+});
+
+// ---------- examples ----------
+
+const examplesEl = $('examples');
+
+async function loadExamples() {
+  try {
+    const r = await fetch(`${API_BASE}/api/examples`);
+    const { examples } = await r.json();
+    examplesCache = examples || [];
+  } catch {
+    examplesCache = [];
+  }
+  examplesEl.innerHTML = '';
+  for (const ex of examplesCache) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'ex';
+    b.innerHTML = `${ex.emoji} ${ex.label}`;
+    b.title = ex.template;
+    b.addEventListener('click', () => fillExample(ex));
+    examplesEl.appendChild(b);
+  }
+}
+
+function fillExample(ex) {
+  const ta = $('prompt');
+  let mention;
+  if (petsCache.length > 0) {
+    mention = `@${petsCache[0].slug}`;
+  } else {
+    mention = '@yourdog';
+  }
+  ta.value = ex.template.replace(/\{pet\}/g, mention);
+  ta.focus();
+  ta.setSelectionRange(ta.value.length, ta.value.length);
+  updateGo();
+}
+
+// ---------- @-mention autocomplete ----------
+
+const mentionPopup = $('mentionPopup');
+let mentionState = null; // { start, items, active }
+
+function closeMentionPopup() {
+  mentionPopup.classList.add('hidden');
+  mentionPopup.innerHTML = '';
+  mentionState = null;
+}
+
+function openMentionPopup(start, query) {
+  const matches = petsCache.filter((p) => p.slug.startsWith(query.toLowerCase()));
+  if (matches.length === 0) return closeMentionPopup();
+
+  mentionState = { start, items: matches, active: 0 };
+  mentionPopup.innerHTML = '';
+  matches.forEach((p, i) => {
+    const item = document.createElement('div');
+    item.className = 'item' + (i === 0 ? ' active' : '');
+    item.innerHTML = `<img src="${p.photoUrl}" /><span><strong>${p.name}</strong> <span class="slug">@${p.slug}</span></span>`;
+    item.addEventListener('mousedown', (e) => { e.preventDefault(); pickMention(p); });
+    mentionPopup.appendChild(item);
+  });
+  mentionPopup.classList.remove('hidden');
+}
+
+function pickMention(pet) {
+  if (!mentionState) return;
+  const ta = $('prompt');
+  const before = ta.value.slice(0, mentionState.start);
+  const after = ta.value.slice(ta.selectionStart);
+  ta.value = `${before}@${pet.slug} ${after}`;
+  const pos = before.length + 2 + pet.slug.length;
+  ta.setSelectionRange(pos, pos);
+  ta.focus();
+  closeMentionPopup();
+  updateGo();
+}
+
+function refreshMentionFromTextarea() {
+  const ta = $('prompt');
+  const cursor = ta.selectionStart ?? 0;
+  const upto = ta.value.slice(0, cursor);
+  const m = upto.match(/(?:^|\s)@([\p{L}\p{N}_-]{0,32})$/u);
+  if (!m) return closeMentionPopup();
+  const start = cursor - m[1].length - 1; // includes the @
+  openMentionPopup(start, m[1]);
+}
+
+$('prompt').addEventListener('input', () => { refreshMentionFromTextarea(); updateGo(); });
+$('prompt').addEventListener('keyup', (e) => {
+  if (['ArrowLeft','ArrowRight','Home','End'].includes(e.key)) refreshMentionFromTextarea();
+});
+$('prompt').addEventListener('blur', () => setTimeout(closeMentionPopup, 100));
+$('prompt').addEventListener('keydown', (e) => {
+  if (!mentionState) return;
+  if (e.key === 'ArrowDown') {
+    e.preventDefault();
+    mentionState.active = (mentionState.active + 1) % mentionState.items.length;
+    refreshMentionPopupActive();
+  } else if (e.key === 'ArrowUp') {
+    e.preventDefault();
+    mentionState.active = (mentionState.active - 1 + mentionState.items.length) % mentionState.items.length;
+    refreshMentionPopupActive();
+  } else if (e.key === 'Enter' || e.key === 'Tab') {
+    e.preventDefault();
+    pickMention(mentionState.items[mentionState.active]);
+  } else if (e.key === 'Escape') {
+    closeMentionPopup();
+  }
+});
+function refreshMentionPopupActive() {
+  for (const [i, el] of [...mentionPopup.children].entries()) {
+    el.classList.toggle('active', i === mentionState.active);
+  }
+}
+
+// ---------- generate ----------
+
+const promptEl = $('prompt');
 const goBtn = $('go');
 const statusEl = $('status');
 const resultEl = $('result');
 const resultTitle = $('resultTitle');
-const origImg = $('origImg');
 const outImg = $('outImg');
-const outLabel = $('outLabel');
-const galleryEl = $('gallery');
+const outMeta = $('outMeta');
 
 function updateGo() {
-  goBtn.disabled = !(selectedFile && selectedTheme);
+  const text = promptEl.value.trim();
+  goBtn.disabled = text.length === 0;
 }
-
-async function loadThemes() {
-  const r = await fetch(`${API_BASE}/api/themes`);
-  const { themes } = await r.json();
-  themesEl.innerHTML = '';
-  for (const t of themes) {
-    const el = document.createElement('button');
-    el.type = 'button';
-    el.className = 'theme';
-    el.dataset.id = t.id;
-    el.innerHTML = `<span class="e">${t.emoji}</span>${t.label}`;
-    el.addEventListener('click', () => {
-      selectedTheme = t;
-      for (const c of themesEl.querySelectorAll('.theme')) c.classList.remove('selected');
-      el.classList.add('selected');
-      updateGo();
-    });
-    themesEl.appendChild(el);
-  }
-}
-
-function setFile(f) {
-  selectedFile = f;
-  if (!f) {
-    uploader.classList.remove('has-image');
-    const old = uploader.querySelector('img');
-    if (old) old.remove();
-    placeholder.style.display = '';
-    updateGo();
-    return;
-  }
-  let img = uploader.querySelector('img');
-  if (!img) {
-    img = document.createElement('img');
-    uploader.insertBefore(img, swapBtn);
-  }
-  img.src = URL.createObjectURL(f);
-  placeholder.style.display = 'none';
-  uploader.classList.add('has-image');
-  updateGo();
-}
-
-fileEl.addEventListener('change', () => setFile(fileEl.files[0] || null));
-swapBtn.addEventListener('click', (e) => { e.preventDefault(); fileEl.click(); });
-['dragenter', 'dragover'].forEach((ev) =>
-  uploader.addEventListener(ev, (e) => { e.preventDefault(); uploader.style.borderColor = '#ff6b6b'; }),
-);
-['dragleave', 'drop'].forEach((ev) =>
-  uploader.addEventListener(ev, (e) => { e.preventDefault(); uploader.style.borderColor = ''; }),
-);
-uploader.addEventListener('drop', (e) => {
-  const f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
-  if (f) setFile(f);
-});
 
 goBtn.addEventListener('click', async () => {
-  if (!selectedFile || !selectedTheme) return;
+  const prompt = promptEl.value.trim();
+  if (!prompt) return;
   goBtn.disabled = true;
   resultEl.classList.remove('show');
   statusEl.classList.remove('error');
-  statusEl.innerHTML = `<span class="spinner"></span>Dressing up your dog as a ${selectedTheme.label}… (this takes ~30s)`;
-
-  const fd = new FormData();
-  fd.append('photo', selectedFile);
-  fd.append('theme', selectedTheme.id);
+  statusEl.innerHTML = '<span class="spinner"></span>Generating… (this takes ~30s)';
 
   try {
-    let r = await api('/api/dressup', { method: 'POST', body: fd });
+    let r = await api('/api/generate', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ prompt }),
+    });
     let data = await r.json();
     if (r.status === 429 && data.retry) {
       statusEl.innerHTML = '<span class="spinner"></span>Rate-limited by the AI Gateway. Waiting 20s and retrying…';
       await new Promise((res) => setTimeout(res, 20000));
-      r = await api('/api/dressup', { method: 'POST', body: fd });
+      r = await api('/api/generate', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ prompt }),
+      });
       data = await r.json();
     }
     if (!r.ok) throw new Error(data.error || 'request failed');
-    origImg.src = data.originalUrl;
     outImg.src = data.outputUrl;
-    outLabel.textContent = `${data.emoji} ${data.themeLabel}`;
-    resultTitle.textContent = `Your dog as a ${data.themeLabel} ${data.emoji}`;
+    outMeta.innerHTML = `<div><strong>${(data.petNames || []).join(', ') || 'Result'}</strong></div><div class="muted small">${escapeHtml(data.prompt)}</div>`;
+    resultTitle.textContent = 'Result';
     resultEl.classList.add('show');
-    statusEl.textContent = 'Done!';
+    statusEl.textContent = data.warnings?.length ? data.warnings.join(' · ') : 'Done!';
     loadGallery();
   } catch (err) {
     statusEl.classList.add('error');
@@ -304,35 +421,41 @@ goBtn.addEventListener('click', async () => {
   }
 });
 
+// ---------- gallery ----------
+
+const galleryEl = $('gallery');
+
 async function loadGallery() {
   try {
     const r = await api('/api/gallery');
-    if (!r.ok) {
-      galleryEl.innerHTML = '<div class="empty">Could not load gallery.</div>';
-      return;
-    }
+    if (!r.ok) { galleryEl.innerHTML = '<div class="empty">Could not load gallery.</div>'; return; }
     const { items } = await r.json();
     if (!items || items.length === 0) {
-      galleryEl.innerHTML = '<div class="empty">No dress-ups yet — be the first!</div>';
+      galleryEl.innerHTML = '<div class="empty">No generations yet — write a prompt above to make your first one.</div>';
       return;
     }
     galleryEl.innerHTML = '';
     for (const it of items) {
       const tile = document.createElement('div');
       tile.className = 'tile';
-      const img = document.createElement('img');
-      img.src = it.outputUrl;
-      img.alt = it.themeLabel;
-      const meta = document.createElement('div');
-      meta.className = 'meta';
-      meta.innerHTML = `<strong>${it.emoji} ${it.themeLabel}</strong><span>${new Date(it.createdAt).toLocaleString()}</span>`;
-      tile.appendChild(img);
-      tile.appendChild(meta);
+      tile.innerHTML = `
+        <img src="${it.outputUrl}" alt="" />
+        <div class="meta">
+          <div class="prompt">${escapeHtml(it.prompt)}</div>
+          <div class="when">${(it.petNames || []).join(', ') ? '🐶 ' + escapeHtml((it.petNames || []).join(', ')) + ' · ' : ''}${new Date(it.createdAt).toLocaleString()}</div>
+        </div>
+      `;
       galleryEl.appendChild(tile);
     }
   } catch {
     galleryEl.innerHTML = '<div class="empty">Could not load gallery.</div>';
   }
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, (c) => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
+  })[c]);
 }
 
 // boot
