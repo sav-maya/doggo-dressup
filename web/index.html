@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Doggo Dress-Up · Built on Neon</title>
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E🐶%3C/text%3E%3C/svg%3E" />
+    <link rel="stylesheet" href="./style.css" />
+  </head>
+  <body>
+    <header>
+      <div class="logo">
+        <span class="dot">🐶</span>
+        <span>Doggo Dress-Up</span>
+      </div>
+      <div class="header-right">
+        <div class="badge"><span class="pulse"></span> Built on Neon</div>
+        <div id="userBox" class="user-box hidden">
+          <span id="userEmail"></span>
+          <button type="button" class="link-btn" id="signOut">Sign out</button>
+        </div>
+      </div>
+    </header>
+
+    <main>
+      <!-- Auth gate -->
+      <section id="authGate" class="panel auth-panel hidden">
+        <h1>Sign in to dress up your dog</h1>
+        <p class="muted">Auth runs on <strong>Neon Auth</strong> (Better Auth). Your sessions live in Postgres alongside your dress-ups.</p>
+
+        <div class="tabs" role="tablist">
+          <button class="tab selected" data-tab="signin" type="button">Sign in</button>
+          <button class="tab" data-tab="signup" type="button">Create account</button>
+        </div>
+
+        <form id="signinForm" class="auth-form">
+          <label>Email<input type="email" name="email" autocomplete="email" required /></label>
+          <label>Password<input type="password" name="password" autocomplete="current-password" required minlength="8" /></label>
+          <button class="btn" type="submit">Sign in</button>
+          <div class="status" id="signinStatus"></div>
+        </form>
+
+        <form id="signupForm" class="auth-form hidden">
+          <label>Name<input type="text" name="name" required /></label>
+          <label>Email<input type="email" name="email" autocomplete="email" required /></label>
+          <label>Password<input type="password" name="password" autocomplete="new-password" required minlength="8" /></label>
+          <button class="btn" type="submit">Create account</button>
+          <div class="status" id="signupStatus"></div>
+        </form>
+      </section>
+
+      <!-- App -->
+      <section id="appPanel" class="hidden">
+        <section class="hero">
+          <h1>Turn your dog into a <em>knight, astronaut, or sushi chef.</em></h1>
+          <p>Upload a photo of your good boy or girl, pick a costume, and a tiny AI agent re-imagines them. The pic, the prompt, and the result all live in one branch-scoped Neon project.</p>
+        </section>
+
+        <section class="panel">
+          <div class="grid">
+            <div>
+              <h2>1. Drop a dog photo</h2>
+              <label class="uploader" id="uploader">
+                <input id="file" type="file" accept="image/*" />
+                <div class="placeholder">
+                  <div class="big">📷</div>
+                  <div>Click or drop a JPG/PNG of your dog</div>
+                  <div class="hint">Max 8 MB</div>
+                </div>
+                <button type="button" class="swap" id="swap">Swap photo</button>
+              </label>
+            </div>
+            <div>
+              <h2>2. Pick a costume</h2>
+              <div class="themes" id="themes"></div>
+            </div>
+          </div>
+
+          <div class="actions">
+            <button class="btn" id="go" disabled>Dress my dog!</button>
+            <div class="status" id="status"></div>
+          </div>
+
+          <div class="result" id="result">
+            <h3 id="resultTitle">Result</h3>
+            <div class="result-grid">
+              <div class="result-card">
+                <div class="label">Original</div>
+                <img id="origImg" alt="Original" />
+              </div>
+              <div class="result-card">
+                <div class="label" id="outLabel">Dressed up</div>
+                <img id="outImg" alt="Dressed up" />
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <h3>Your recent dress-ups</h3>
+        <div id="gallery" class="gallery"></div>
+      </section>
+    </main>
+
+    <footer>
+      Built on the
+      <a href="https://build-on-neon.vercel.app/" target="_blank" rel="noopener">Neon backend for apps and agents</a>
+      preview · <a href="https://github.com/sav-maya/doggo-dressup" target="_blank" rel="noopener">source on GitHub</a>
+    </footer>
+
+    <script src="./app.js"></script>
+  </body>
+</html>

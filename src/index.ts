@@ -8,13 +8,13 @@ import {
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { drizzle } from 'drizzle-orm/node-postgres';
 import { Pool } from 'pg';
-import { desc } from 'drizzle-orm';
+import { desc, eq } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
 import { parseEnv } from '@neondatabase/env';
 import config from '../neon';
 import { dressups } from './db/schema';
 import { THEMES, THEME_LIST } from './themes';
-import { INDEX_HTML } from './web';
+import { authenticateRequest, authConfig, type AuthUser } from './auth';
 
 const env = parseEnv(config);
 
@@ -77,7 +77,15 @@ function imageResultBase64(output: unknown): string | null {
   return null;
 }
 
-async function handleDressup(request: Request): Promise<Response> {
+async function requireUser(request: Request): Promise<AuthUser | Response> {
+  const result = await authenticateRequest(request);
+  if (!result.ok) {
+    return json({ error: 'sign in required', detail: result.error }, result.status);
+  }
+  return result.user;
+}
+
+async function handleDressup(request: Request, user: AuthUser): Promise<Response> {
   let form: FormData;
   try {
     form = await request.formData();
@@ -189,6 +197,8 @@ async function handleDressup(request: Request): Promise<Response> {
   const [row] = await db
     .insert(dressups)
     .values({
+      userId: user.id,
+      userEmail: user.email,
       theme: theme.id,
       themeLabel: theme.label,
       prompt: userPrompt,
@@ -215,10 +225,11 @@ async function handleDressup(request: Request): Promise<Response> {
   });
 }
 
-async function handleGallery(): Promise<Response> {
+async function handleGallery(user: AuthUser): Promise<Response> {
   const rows = await db
     .select()
     .from(dressups)
+    .where(eq(dressups.userId, user.id))
     .orderBy(desc(dressups.createdAt))
     .limit(24);
   const items = await Promise.all(
@@ -240,9 +251,53 @@ function handleThemes(): Response {
 }
 
 function handleIndex(): Response {
-  return new Response(INDEX_HTML, {
-    headers: { 'content-type': 'text/html; charset=utf-8' },
+  // Backend is API-only; the SPA is hosted on Vercel. This is a friendly
+  // landing for someone who hits the function URL directly.
+  const body = `Doggo Dress-Up API is running.
+
+POST /api/dressup           multipart upload (auth required)
+GET  /api/gallery           latest 24 dress-ups for the signed-in user
+GET  /api/themes            list of costumes
+GET  /api/me                current user (or { user: null })
+GET  /api/auth-config       auth base URL for the SPA
+
+The web UI lives on Vercel. Sign in there to use this API.
+`;
+  return new Response(body, {
+    headers: { 'content-type': 'text/plain; charset=utf-8' },
   });
+}
+
+function handleAuthConfig(): Response {
+  return json({ baseUrl: authConfig.baseUrl, issuer: authConfig.issuer });
+}
+
+const ALLOWED_ORIGIN_SUFFIXES = [
+  '.vercel.app',
+  '.neon.tech',
+];
+
+function corsHeaders(origin: string | null): Record<string, string> {
+  // Allow same-origin (no Origin header) and any *.vercel.app or *.neon.tech.
+  // Also allow http://localhost:* for local dev.
+  if (!origin) return {};
+  let allow = false;
+  try {
+    const u = new URL(origin);
+    if (u.hostname === 'localhost' || u.hostname === '127.0.0.1') allow = true;
+    if (ALLOWED_ORIGIN_SUFFIXES.some((s) => u.hostname.endsWith(s))) allow = true;
+  } catch {
+    /* ignore */
+  }
+  if (!allow) return {};
+  return {
+    'access-control-allow-origin': origin,
+    'access-control-allow-credentials': 'true',
+    'access-control-allow-headers': 'authorization, content-type',
+    'access-control-allow-methods': 'GET, POST, OPTIONS',
+    'access-control-max-age': '600',
+    vary: 'Origin',
+  };
 }
 
 function json(body: unknown, status = 200): Response {
@@ -250,6 +305,14 @@ function json(body: unknown, status = 200): Response {
     status,
     headers: { 'content-type': 'application/json' },
   });
+}
+
+function withCors(response: Response, origin: string | null): Response {
+  const cors = corsHeaders(origin);
+  if (Object.keys(cors).length === 0) return response;
+  const headers = new Headers(response.headers);
+  for (const [k, v] of Object.entries(cors)) headers.set(k, v);
+  return new Response(response.body, { status: response.status, headers });
 }
 
 function errMessage(err: unknown): string {
@@ -266,20 +329,39 @@ export default {
     const url = new URL(request.url);
     const { pathname } = url;
     const method = request.method.toUpperCase();
+    const origin = request.headers.get('origin');
 
+    // CORS preflight
+    if (method === 'OPTIONS') {
+      return withCors(new Response(null, { status: 204 }), origin);
+    }
+
+    let response: Response;
     if (method === 'GET' && (pathname === '/' || pathname === '/index.html')) {
-      return handleIndex();
-    }
-    if (method === 'GET' && pathname === '/api/themes') {
-      return handleThemes();
-    }
-    if (method === 'GET' && pathname === '/api/gallery') {
-      return handleGallery();
-    }
-    if (method === 'POST' && pathname === '/api/dressup') {
-      return handleDressup(request);
+      response = handleIndex();
+    } else if (method === 'GET' && pathname === '/api/auth-config') {
+      response = handleAuthConfig();
+    } else if (method === 'GET' && pathname === '/api/themes') {
+      response = handleThemes();
+    } else if (method === 'GET' && pathname === '/api/me') {
+      const auth = await authenticateRequest(request);
+      response = auth.ok ? json({ user: auth.user }) : json({ user: null });
+    } else if (method === 'GET' && pathname === '/api/gallery') {
+      const userOrResponse = await requireUser(request);
+      response =
+        userOrResponse instanceof Response
+          ? userOrResponse
+          : await handleGallery(userOrResponse);
+    } else if (method === 'POST' && pathname === '/api/dressup') {
+      const userOrResponse = await requireUser(request);
+      response =
+        userOrResponse instanceof Response
+          ? userOrResponse
+          : await handleDressup(request, userOrResponse);
+    } else {
+      response = new Response('Not found', { status: 404 });
     }
 
-    return new Response('Not found', { status: 404 });
+    return withCors(response, origin);
   },
 };
