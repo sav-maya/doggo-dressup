@@ -28,9 +28,24 @@ const s3 = new S3Client({
 });
 
 const BUCKET = 'dressups';
-// gpt-5 / gpt-5-mini / gpt-5-nano are the models on the gateway that expose
-// the OpenAI Responses image_generation built-in tool. Override with NEON_MODEL.
-const MODEL = process.env.NEON_MODEL ?? 'gpt-5-mini';
+// Image generation on the AI Gateway is only available through OpenAI
+// Responses' `image_generation` built-in tool, which is GPT-5-family-only.
+// All gateway models share the same per-minute TPM limits (200k input,
+// 20k output, see https://neon.com/docs/ai-gateway/models#rate-limits)
+// and the same daily account-level cap, so picking a smaller model isn't
+// about looser limits — it's about emitting fewer chat tokens per call so
+// the reasoning-and-tool-call portion stays small. The image bytes
+// returned by the tool dominate output anyway; size is locked by the
+// Responses API to 1024x1024 / 1024x1536 / 1536x1024 / auto. `gpt-5-4-nano`
+// is the smallest current GPT-5 variant that supports the Responses
+// image_generation tool.
+const MODEL = process.env.NEON_MODEL ?? 'gpt-5-4-nano';
+
+const IMAGE_SIZE = (process.env.NEON_IMAGE_SIZE ?? '1024x1024') as
+  | '1024x1024'
+  | '1024x1536'
+  | '1536x1024'
+  | 'auto';
 
 async function presign(key: string, expiresIn = 3600): Promise<string> {
   return getSignedUrl(s3, new GetObjectCommand({ Bucket: BUCKET, Key: key }), {
@@ -135,7 +150,7 @@ async function handleDressup(request: Request, user: AuthUser): Promise<Response
           outputFormat: 'jpeg',
           quality: 'low',
           outputCompression: 30,
-          size: '1024x1024',
+          size: IMAGE_SIZE,
         }),
       },
       onError({ error }) {
