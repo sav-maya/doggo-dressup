@@ -4,7 +4,7 @@
 
 Cast your dog (or any number of dogs) into any scene. Add a pet to your "cast", then @-mention them in a free-form prompt and an AI agent re-imagines them — wizards, knights, astronauts, sushi chefs, whatever you can write.
 
-A tiny [Vibecastly](https://vibecastly.vercel.app/)-shaped app built on the **Neon backend for apps and agents** private preview, exercising every primitive in the stack:
+A tiny app built on the **Neon backend for apps and agents** private preview, exercising every primitive in the stack:
 
 - **[Neon Postgres](https://neon.com/docs)** — `pets` (your cast) + `generations` (your gallery), keyed by user
 - **[Neon Auth](https://neon.com/docs/neon-auth/sdk/api)** (Better Auth) — managed sign-in / sign-up, JWTs verified by JWKS
@@ -156,4 +156,4 @@ cd web && npx serve .   # static frontend on http://localhost:3000
 - **Bucket is private.** Every photo and every generation is served via 1-hour presigned GET URLs.
 - **Single region.** The whole app is in `aws-us-east-2` because that's the only region the Neon backend-for-apps-and-agents preview supports today.
 
-Built on the official [`ai-sdk` Neon template](https://build-on-neon.vercel.app/), then reskinned for dogs and reshaped after [Vibecastly](https://vibecastly.vercel.app/) (cast → @-mention → generate).
+Built on the official [`ai-sdk` Neon template](https://build-on-neon.vercel.app/), then reskinned for dogs (cast → @-mention → generate).
