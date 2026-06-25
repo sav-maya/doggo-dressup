@@ -1,4 +1,4 @@
-// Doggo Dress-Up frontend (Vibecastly-style).
+// Doggo Dress-Up frontend.
 // 1. Add pets (the "cast")
 // 2. Write a prompt and @-mention them
 // 3. Generate
