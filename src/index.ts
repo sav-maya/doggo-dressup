@@ -298,20 +298,26 @@ async function handleGenerate(request: Request, user: AuthUser): Promise<Respons
     }
   } catch (err) {
     const detail = errMessage(err);
-    console.error('[generate] model failed:', detail);
-    if (/daily token limit|REQUEST_LIMIT_EXCEEDED|daily.*exceeded/i.test(detail)) {
+    // The AI SDK swallows the upstream body when it retries; probe the
+    // gateway directly so we can return the actual error code/message.
+    const upstream = await probeGatewayOnce().catch(() => null);
+    const combined = `${detail} :: ${upstream?.body ?? ''}`;
+    console.error('[generate] model failed:', combined);
+
+    if (/daily token limit|REQUEST_LIMIT_EXCEEDED|daily.*exceeded/i.test(combined)) {
       return json({
-        error: "Today's AI Gateway token budget is used up. The cap resets at midnight UTC. Try again tomorrow, or raise the limit in the Neon console.",
-        detail, retry: false,
+        error: "Today's AI Gateway token budget is used up (REQUEST_LIMIT_EXCEEDED). The cap is org-wide on Neon's side and resets at the next billing window. Contact Neon support to raise it.",
+        detail: upstream?.body ?? detail,
+        retry: false,
       }, 429);
     }
-    if (/too many requests|rate limit|429/i.test(detail)) {
+    if (/too many requests|rate limit|429/i.test(combined)) {
       return json({
         error: 'The AI Gateway is rate-limiting us right now. Wait ~30 seconds and try again.',
-        detail, retry: true,
+        detail: upstream?.body ?? detail, retry: true,
       }, 429);
     }
-    return json({ error: 'image generation failed', detail }, 502);
+    return json({ error: 'image generation failed', detail: upstream?.body ?? detail }, 502);
   }
 
   if (!toolBase64) {
@@ -374,6 +380,73 @@ function handleExamples(): Response {
 
 function handleAuthConfig(): Response {
   return json({ baseUrl: authConfig.baseUrl, issuer: authConfig.issuer });
+}
+
+// One-shot raw-fetch probe of the gateway. Used by the generate-error path to
+// expose the real upstream message (the AI SDK swallows the body across its
+// own retries).
+async function probeGatewayOnce(): Promise<{ status: number; body: string } | null> {
+  const base = process.env.NEON_AI_GATEWAY_BASE_URL ?? process.env.OPENAI_BASE_URL?.replace(/\/openai\/v1.*$/, '');
+  const token = process.env.NEON_AI_GATEWAY_TOKEN ?? process.env.OPENAI_API_KEY;
+  if (!base || !token) return null;
+  const r = await fetch(`${base}/ai-gateway/mlflow/v1/chat/completions`, {
+    method: 'POST',
+    headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+    body: JSON.stringify({
+      model: process.env.NEON_MODEL ?? 'gpt-5-4-nano',
+      messages: [{ role: 'user', content: 'hi' }],
+      max_completion_tokens: 5,
+    }),
+  });
+  return { status: r.status, body: (await r.text()).slice(0, 400) };
+}
+
+// Diagnostic — calls the gateway from inside the function and returns whatever
+// it says, so we can see the actual upstream message (vs the AI SDK's wrapped
+// "Too Many Requests" string).
+async function handleDebugGateway(): Promise<Response> {
+  const base = process.env.NEON_AI_GATEWAY_BASE_URL ?? process.env.OPENAI_BASE_URL?.replace(/\/openai\/v1.*$/, '') ?? '';
+  const token = process.env.NEON_AI_GATEWAY_TOKEN ?? process.env.OPENAI_API_KEY ?? '';
+  if (!base || !token) {
+    return json({ error: 'gateway env vars not present', haveBase: !!base, haveToken: !!token, tokenPrefix: token.slice(0, 12) }, 500);
+  }
+  const out: Record<string, unknown> = {
+    haveBase: true,
+    haveToken: true,
+    tokenPrefix: token.slice(0, 16) + '...',
+    base,
+  };
+  // 1. chat/completions
+  try {
+    const r = await fetch(`${base}/ai-gateway/mlflow/v1/chat/completions`, {
+      method: 'POST',
+      headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+      body: JSON.stringify({
+        model: process.env.NEON_MODEL ?? 'gpt-5-4-nano',
+        messages: [{ role: 'user', content: 'hi' }],
+        max_completion_tokens: 5,
+      }),
+    });
+    out.chatCompletions = { status: r.status, body: (await r.text()).slice(0, 400) };
+  } catch (err) {
+    out.chatCompletions = { error: errMessage(err) };
+  }
+  // 2. openai/responses
+  try {
+    const r = await fetch(`${base}/ai-gateway/openai/v1/responses`, {
+      method: 'POST',
+      headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+      body: JSON.stringify({
+        model: process.env.NEON_MODEL ?? 'gpt-5-4-nano',
+        input: 'hi',
+        max_output_tokens: 40,
+      }),
+    });
+    out.openaiResponses = { status: r.status, body: (await r.text()).slice(0, 400) };
+  } catch (err) {
+    out.openaiResponses = { error: errMessage(err) };
+  }
+  return json(out);
 }
 
 function handleIndex(): Response {
@@ -450,6 +523,8 @@ export default {
         response = handleIndex();
       } else if (method === 'GET' && pathname === '/api/auth-config') {
         response = handleAuthConfig();
+      } else if (method === 'GET' && pathname === '/api/debug/gateway') {
+        response = await handleDebugGateway();
       } else if (method === 'GET' && pathname === '/api/examples') {
         response = handleExamples();
       } else if (method === 'GET' && pathname === '/api/me') {
