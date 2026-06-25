@@ -448,8 +448,15 @@ export const INDEX_HTML = /* html */ `<!doctype html>
         fd.append('theme', selectedTheme.id);
 
         try {
-          const r = await fetch('/api/dressup', { method: 'POST', body: fd });
-          const data = await r.json();
+          let r = await fetch('/api/dressup', { method: 'POST', body: fd });
+          let data = await r.json();
+          // One automatic retry on rate-limit, with a short wait.
+          if (r.status === 429 && data.retry) {
+            statusEl.innerHTML = '<span class="spinner"></span>Rate-limited by the AI Gateway. Waiting 20s and retrying…';
+            await new Promise((res) => setTimeout(res, 20000));
+            r = await fetch('/api/dressup', { method: 'POST', body: fd });
+            data = await r.json();
+          }
           if (!r.ok) throw new Error(data.error || 'request failed');
           origImg.src = data.originalUrl;
           outImg.src = data.outputUrl;
@@ -460,7 +467,7 @@ export const INDEX_HTML = /* html */ `<!doctype html>
           loadGallery();
         } catch (err) {
           statusEl.classList.add('error');
-          statusEl.textContent = 'Oops: ' + (err.message || err);
+          statusEl.textContent = err.message || String(err);
         } finally {
           goBtn.disabled = false;
           updateGo();

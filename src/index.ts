@@ -28,7 +28,9 @@ const s3 = new S3Client({
 });
 
 const BUCKET = 'dressups';
-const MODEL = 'gpt-5-mini';
+// gpt-5 / gpt-5-mini / gpt-5-nano are the models on the gateway that expose
+// the OpenAI Responses image_generation built-in tool. Override with NEON_MODEL.
+const MODEL = process.env.NEON_MODEL ?? 'gpt-5-mini';
 
 async function presign(key: string, expiresIn = 3600): Promise<string> {
   return getSignedUrl(s3, new GetObjectCommand({ Bucket: BUCKET, Key: key }), {
@@ -145,15 +147,41 @@ async function handleDressup(request: Request): Promise<Response> {
       if (toolBase64) break;
     }
   } catch (err) {
-    console.error('[dressup] model failed:', err);
-    return json(
-      { error: 'image generation failed', detail: errMessage(err) },
-      502,
-    );
+    const detail = errMessage(err);
+    console.error('[dressup] model failed:', detail);
+    if (/daily token limit|REQUEST_LIMIT_EXCEEDED|daily.*exceeded/i.test(detail)) {
+      return json(
+        {
+          error:
+            "Today's AI Gateway token budget is used up. The cap resets at midnight UTC. Try again tomorrow, or raise the limit in the Neon console.",
+          detail,
+          retry: false,
+        },
+        429,
+      );
+    }
+    if (/too many requests|rate limit|429/i.test(detail)) {
+      return json(
+        {
+          error:
+            'The AI Gateway is rate-limiting us right now. Wait ~30 seconds and try again.',
+          detail,
+          retry: true,
+        },
+        429,
+      );
+    }
+    return json({ error: 'image generation failed', detail }, 502);
   }
 
   if (!toolBase64) {
-    return json({ error: 'model did not produce an image' }, 502);
+    return json(
+      {
+        error:
+          'The model decided not to produce an image (this can happen with refusals or content filters). Try a different photo or theme.',
+      },
+      502,
+    );
   }
 
   const { key: outputKey, bytes } = await uploadOutput(toolBase64);
