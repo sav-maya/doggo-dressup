@@ -3,7 +3,8 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width,initial-scale=1" />
-    <title>Doggo Dress-Up · Built on Neon</title>
+    <title>Doggo Dress-Up · Cast your dog into any scene</title>
+    <meta name="description" content="Upload your dog, @-mention them in a prompt, and an AI agent re-imagines them in any scene. Built on Neon." />
     <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E🐶%3C/text%3E%3C/svg%3E" />
     <link rel="stylesheet" href="./style.css" />
   </head>
@@ -22,91 +23,159 @@
       </div>
     </header>
 
-    <main>
-      <!-- Auth gate -->
-      <section id="authGate" class="panel auth-panel hidden">
-        <h1>Sign in to dress up your dog</h1>
-        <p class="muted">Auth runs on <strong>Neon Auth</strong> (Better Auth). Your sessions and your cast both live in Postgres alongside your dress-ups.</p>
-
-        <div class="tabs" role="tablist">
-          <button class="tab selected" data-tab="signin" type="button">Sign in</button>
-          <button class="tab" data-tab="signup" type="button">Create account</button>
+    <!-- ========================================================== -->
+    <!-- HOMEPAGE (shown when not signed in)                        -->
+    <!-- ========================================================== -->
+    <section id="home" class="home hidden">
+      <!-- Hero: marketing left, auth widget right -->
+      <div class="hero-row">
+        <div class="hero-copy">
+          <div class="eyebrow">Built on Neon · Functions · Storage · AI Gateway · Auth</div>
+          <h1>Cast your dog into <em>any scene.</em></h1>
+          <p class="lede">
+            Upload a clear photo of your dog (or a few of them), then
+            <strong>@-mention</strong> them in a free-form prompt. An AI agent
+            uses each pup's photo as the visual reference and generates the
+            scene — knight, astronaut, sushi chef, whatever you can write.
+          </p>
+          <ul class="bullets">
+            <li><span class="b">🐾</span> Add as many dogs as you want to your private cast</li>
+            <li><span class="b">✨</span> Free-form prompts with <code>@-mention</code> autocomplete</li>
+            <li><span class="b">🖼️</span> Personal gallery, scoped to your account</li>
+          </ul>
+          <div class="hero-cta-row">
+            <a href="#auth" class="btn small">Create an account</a>
+            <a href="https://github.com/sav-maya/doggo-dressup" target="_blank" rel="noopener" class="ghost-btn">View on GitHub →</a>
+          </div>
         </div>
 
-        <form id="signinForm" class="auth-form">
-          <label>Email<input type="email" name="email" autocomplete="email" required /></label>
-          <label>Password<input type="password" name="password" autocomplete="current-password" required minlength="8" /></label>
-          <button class="btn" type="submit">Sign in</button>
-          <div class="status" id="signinStatus"></div>
-        </form>
+        <!-- Auth widget -->
+        <aside class="auth-card panel" id="auth">
+          <h2>Get started</h2>
+          <p class="muted small">Auth runs on <strong>Neon Auth</strong> (Better Auth). Free, no email verification required.</p>
 
-        <form id="signupForm" class="auth-form hidden">
-          <label>Name<input type="text" name="name" required /></label>
-          <label>Email<input type="email" name="email" autocomplete="email" required /></label>
-          <label>Password<input type="password" name="password" autocomplete="new-password" required minlength="8" /></label>
-          <button class="btn" type="submit">Create account</button>
-          <div class="status" id="signupStatus"></div>
-        </form>
-      </section>
-
-      <!-- App -->
-      <section id="appPanel" class="hidden">
-        <section class="hero">
-          <h1>Cast your dog into <em>any scene.</em></h1>
-          <p>Add your dog (or a few of them), then write a prompt and <strong>@-mention</strong> them. The agent uses each dog's photo as the visual reference and generates the scene.</p>
-        </section>
-
-        <!-- 1. Cast -->
-        <section class="panel">
-          <div class="panel-head">
-            <h2>1. Your cast</h2>
-            <span class="muted small">Up to 12 pets. Their photos become the visual reference for any prompt that @-mentions them.</span>
-          </div>
-          <div id="cast" class="cast"></div>
-          <details class="add-pet" id="addPetDetails">
-            <summary>+ Add a pet</summary>
-            <form id="addPetForm" class="add-pet-form">
-              <label>Name<input type="text" name="name" maxlength="32" required placeholder="Bowie" /></label>
-              <label>Photo<input type="file" name="photo" accept="image/*" required /></label>
-              <button class="btn small" type="submit">Add to cast</button>
-              <div class="status" id="addPetStatus"></div>
-            </form>
-          </details>
-        </section>
-
-        <!-- 2. Compose -->
-        <section class="panel">
-          <div class="panel-head">
-            <h2>2. Write a prompt</h2>
-            <span class="muted small">Type <code>@</code> to reference a pet. e.g. <em>"@bowie as a knight in a stone castle"</em>.</span>
+          <div class="tabs" role="tablist">
+            <button class="tab selected" data-tab="signup" type="button">Create account</button>
+            <button class="tab" data-tab="signin" type="button">Sign in</button>
           </div>
 
-          <div class="compose">
-            <textarea id="prompt" rows="3" placeholder="@yourdog as a wizard in a starry library…"></textarea>
-            <div id="mentionPopup" class="mention-popup hidden"></div>
-          </div>
+          <form id="signupForm" class="auth-form">
+            <label>Name<input type="text" name="name" required placeholder="Your name" /></label>
+            <label>Email<input type="email" name="email" autocomplete="email" required placeholder="you@example.com" /></label>
+            <label>Password<input type="password" name="password" autocomplete="new-password" required minlength="8" placeholder="At least 8 characters" /></label>
+            <button class="btn" type="submit">Create account</button>
+            <div class="status" id="signupStatus"></div>
+          </form>
 
-          <div class="examples-row">
-            <span class="muted small">Examples:</span>
-            <div id="examples" class="examples"></div>
-          </div>
+          <form id="signinForm" class="auth-form hidden">
+            <label>Email<input type="email" name="email" autocomplete="email" required /></label>
+            <label>Password<input type="password" name="password" autocomplete="current-password" required minlength="8" /></label>
+            <button class="btn" type="submit">Sign in</button>
+            <div class="status" id="signinStatus"></div>
+          </form>
+        </aside>
+      </div>
 
-          <button class="btn" id="go" disabled>Generate</button>
-          <div class="status" id="status"></div>
-
-          <div class="result" id="result">
-            <h3 id="resultTitle">Result</h3>
-            <div class="result-card big">
-              <img id="outImg" alt="Generated" />
-              <div class="meta" id="outMeta"></div>
+      <!-- Demo strip: a peek at what the app produces -->
+      <div class="demo-strip">
+        <div class="demo-card">
+          <div class="demo-cast">
+            <div class="demo-cast-title">Your cast</div>
+            <div class="demo-pet">
+              <img src="./dog-original.jpg" alt="Bowie" />
+              <span>@bowie</span>
             </div>
           </div>
-        </section>
+          <div class="demo-prompt">
+            <span class="demo-mention">@bowie</span> as a wise wizard in a starry library full of floating spell books
+          </div>
+          <div class="demo-result">
+            <img src="./wizard-dog.jpg" alt="Bowie as a wizard" />
+            <div class="demo-tag">Generated</div>
+          </div>
+        </div>
+      </div>
 
-        <h3>Your gallery</h3>
-        <div id="gallery" class="gallery"></div>
+      <!-- How it works -->
+      <section class="how">
+        <h3 class="section-title">From a photo to a scene in seconds</h3>
+        <div class="steps">
+          <div class="step">
+            <div class="step-num">1</div>
+            <h4>Add your cast</h4>
+            <p>Upload a clear photo and give your dog a name. Photos are scoped to your account and stored in branch-scoped Neon Object Storage.</p>
+          </div>
+          <div class="step">
+            <div class="step-num">2</div>
+            <h4>@-mention in a prompt</h4>
+            <p>Type <code>@</code> to autocomplete from your cast. Their photo becomes the visual reference for the generated image.</p>
+          </div>
+          <div class="step">
+            <div class="step-num">3</div>
+            <h4>Generate</h4>
+            <p>The Neon Function calls <code>gpt-5-4-nano</code> through the Neon AI Gateway with your prompt + each pet's photo. The result lands in your gallery.</p>
+          </div>
+        </div>
       </section>
-    </main>
+    </section>
+
+    <!-- ========================================================== -->
+    <!-- APP (shown when signed in)                                 -->
+    <!-- ========================================================== -->
+    <section id="appPanel" class="hidden">
+      <section class="hero-app">
+        <h1>Cast your dog into <em>any scene.</em></h1>
+        <p>Add a pet to your cast, write a prompt, <code>@-mention</code> them — the agent does the rest.</p>
+      </section>
+
+      <section class="panel">
+        <div class="panel-head">
+          <h2>1. Your cast</h2>
+          <span class="muted small">Up to 12 pets. Their photos become the visual reference for any prompt that @-mentions them.</span>
+        </div>
+        <div id="cast" class="cast"></div>
+        <details class="add-pet" id="addPetDetails">
+          <summary>+ Add a pet</summary>
+          <form id="addPetForm" class="add-pet-form">
+            <label>Name<input type="text" name="name" maxlength="32" required placeholder="Bowie" /></label>
+            <label>Photo<input type="file" name="photo" accept="image/*" required /></label>
+            <button class="btn small" type="submit">Add to cast</button>
+            <div class="status" id="addPetStatus"></div>
+          </form>
+        </details>
+      </section>
+
+      <section class="panel">
+        <div class="panel-head">
+          <h2>2. Write a prompt</h2>
+          <span class="muted small">Type <code>@</code> to reference a pet. e.g. <em>"@bowie as a knight in a stone castle"</em>.</span>
+        </div>
+
+        <div class="compose">
+          <textarea id="prompt" rows="3" placeholder="@yourdog as a wizard in a starry library…"></textarea>
+          <div id="mentionPopup" class="mention-popup hidden"></div>
+        </div>
+
+        <div class="examples-row">
+          <span class="muted small">Examples:</span>
+          <div id="examples" class="examples"></div>
+        </div>
+
+        <button class="btn" id="go" disabled>Generate</button>
+        <div class="status" id="status"></div>
+
+        <div class="result" id="result">
+          <h3 id="resultTitle">Result</h3>
+          <div class="result-card big">
+            <img id="outImg" alt="Generated" />
+            <div class="meta" id="outMeta"></div>
+          </div>
+        </div>
+      </section>
+
+      <h3>Your gallery</h3>
+      <div id="gallery" class="gallery"></div>
+    </section>
 
     <footer>
       Built on the

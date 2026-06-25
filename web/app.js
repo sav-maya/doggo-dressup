@@ -17,7 +17,7 @@ const JWT_TTL_MS = 14 * 60 * 1000;
 
 const $ = (id) => document.getElementById(id);
 
-const authGate = $('authGate');
+const homeSection = $('home');
 const appPanel = $('appPanel');
 const userBox = $('userBox');
 const userEmail = $('userEmail');
@@ -76,18 +76,20 @@ async function checkAuthState() {
 }
 
 function showAuthGate() {
-  authGate.classList.remove('hidden');
+  homeSection.classList.remove('hidden');
   appPanel.classList.add('hidden');
   userBox.classList.add('hidden');
 }
 function showApp(user) {
-  authGate.classList.add('hidden');
+  homeSection.classList.add('hidden');
   appPanel.classList.remove('hidden');
   userBox.classList.remove('hidden');
   userEmail.textContent = user.email || user.name || 'Signed in';
   loadExamples();
   loadPets();
   loadGallery();
+  // Scroll to top on transition for a clean feel.
+  window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
 async function signIn(email, password) {
